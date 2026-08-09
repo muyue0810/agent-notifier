@@ -21,6 +21,7 @@ box_cli.py - ESP32-S3-BOX PC 状态指示器 配套 CLI
 
 import argparse
 import json
+import os
 import sys
 import time
 import threading
@@ -144,6 +145,13 @@ class BoxSerial:
     def close(self):
         self._stop = True
         try:
+            # 设 timeout 让正在 read 的线程快速退出
+            self.ser.timeout = 0.1
+        except Exception:
+            pass
+        # 给后台线程一点时间退出，不强制 join（避免阻塞）
+        time.sleep(0.3)
+        try:
             self.ser.close()
         except Exception:
             pass
@@ -196,8 +204,11 @@ STATE_TYPES = ("done", "wait", "processing", "approval", "offline")
 LEVEL_TYPES = ("info", "attention", "urgent", "silent")
 import time as _time
 
+_eid_counter = 0
 def _gen_event_id():
-    return f"evt-{int(_time.time()*1000)}"
+    global _eid_counter
+    _eid_counter += 1
+    return f"evt-{int(_time.time()*1000)}-{_eid_counter}"
 
 def _send_state_shortcut(box, state, arg):
     """快捷命令：cmd [src] [msg]，自动生成 event_id，默认 level=info。"""
@@ -341,7 +352,9 @@ def main():
 
     if args.list:
         for p in list_ports.comports():
-            print(f"{p.device}  vid={p.vid:#x} pid={p.pid:#x}  {p.description}")
+            vid = f"{p.vid:#x}" if p.vid is not None else "?"
+            pid = f"{p.pid:#x}" if p.pid is not None else "?"
+            print(f"{p.device}  vid={vid} pid={pid}  {p.description}")
         return
 
     port = args.port or find_box_port()
@@ -351,23 +364,32 @@ def main():
     print(f"[i] 使用串口: {port}")
 
     box = BoxSerial(port, args.baud)
-    # 等设备枚举稳定
     time.sleep(0.3)
-    box.start_rx(on_event=default_on_event)
-    # 握手 + 启动心跳（保持 BOX 不判离线）
-    box.send_hello()
-    box.start_heartbeat(interval=5)   # 每 5 秒 ping 一次
 
-    # ---- 单条命令模式：发完即走 ----
+    # ---- 单条命令模式：发完即走（不启动后台线程）----
     if args.cmd:
         full = args.cmd + (" " + " ".join(args.args) if args.args else "")
+        box.ser.timeout = 0.1   # 短超时，避免 read 阻塞
         try:
-            dispatch_command(box, full)
-            time.sleep(0.4)  # 等待 ack 回显
+            box.send_hello()                # 先握手
+            time.sleep(0.15)
+            dispatch_command(box, full)     # 发命令
+            # 读最多 0.8 秒响应
+            t_end = time.time() + 0.8
+            while time.time() < t_end:
+                d = box.ser.read(256)
+                if d:
+                    sys.stdout.write(d.decode('utf-8', 'replace'))
+                    sys.stdout.flush()
         except KeyboardInterrupt:
             pass
-        box.close()
-        return
+        # 强制退出（不 close，避免阻塞；OS 会回收句柄）
+        os._exit(0)
+
+    # ---- 交互模式：启动 rx + 心跳 ----
+    box.start_rx(on_event=default_on_event)
+    box.send_hello()
+    box.start_heartbeat(interval=5)
 
     # ---- 交互模式 ----
     print("[i] 进入交互模式。输入 help 查看命令，quit 退出。")
