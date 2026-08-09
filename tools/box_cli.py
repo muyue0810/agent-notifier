@@ -39,26 +39,25 @@ ESPRESSIF_VIDS = {0x303A}
 # ============ 串口发现 ============
 
 def find_box_port(prefer=None):
-    """自动发现 BOX 串口。返回 device 路径或 None。"""
+    """自动发现 BOX 串口（跨平台）。返回 device 路径或 None。
+    Windows: COMx，Linux: /dev/ttyACMx"""
     ports = list(list_ports.comports())
-    # 优先精确匹配 VID:PID 303a:xxxx
     cands = []
     for p in ports:
-        vid = pid = None
-        if p.vid is not None:
-            vid = p.vid
-            pid = p.pid
+        vid = p.vid
         name = (p.device or "").lower()
         desc = (p.description or "").lower()
+        is_acm_like = ("ttyacm" in name) or name.startswith("com")
         if vid in ESPRESSIF_VIDS:
+            # 精确匹配 Espressif VID（最可靠，跨平台）
             cands.append((0, p.device, p.description))
-        elif "ttyacm" in name and ("box" in desc or "serial" in desc or "jtag" in desc):
+        elif is_acm_like and ("box" in desc or "serial" in desc or "jtag" in desc):
             cands.append((1, p.device, p.description))
-        elif "ttyacm" in name:
+        elif is_acm_like:
             cands.append((2, p.device, p.description))
     if prefer:
         for pri, dev, desc in cands:
-            if prefer in dev:
+            if prefer.lower() in dev.lower():
                 return dev
     if cands:
         cands.sort(key=lambda x: x[0])

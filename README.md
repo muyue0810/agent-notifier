@@ -46,7 +46,8 @@ pc_status_display/
 │   ├── sound.c / .h            # ES8311 钟声 + 等级响应 + 节流
 │   └── idf_component.yml       # 组件依赖（锁版本）
 └── tools/
-    ├── box_cli.py              # PC 端 Python CLI（交互/单命令/快捷键/心跳）
+    ├── box_cli.py              # PC 端 Python CLI（跨平台：Windows/Linux/WSL）
+    ├── box_cli.bat             # Windows 启动脚本
     └── flash.ps1               # Windows 端一键烧录脚本
 ```
 
@@ -137,28 +138,51 @@ WSL2 无法在固件运行时（CDC 占用 USB）烧录，采用 **Windows 原�
 
 ## PC 端 CLI 使用
 
+CLI 是纯 Python（pyserial），**Windows / Linux / WSL 均可运行**。
+
+### Windows 直接运行（推荐，最简单）
+
+Windows 不需要 WSL/usbipd，设备插上就能用：
+
+```powershell
+# 首次：装 pyserial
+pip install pyserial
+
+# 单条命令（自动发现 COM 口）
+python tools\box_cli.py done Codex "answer ready"
+python tools\box_cli.py wait Claude "needs your reply"
+python tools\box_cli.py approval Codex "review merge"
+python tools\box_cli.py beep
+python tools\box_cli.py ping
+
+# 或用批处理脚本
+tools\box_cli.bat done Codex "answer ready"
+
+# 交互模式（注：全局快捷键需额外装 keyboard 库且以管理员运行）
+python tools\box_cli.py
+
+# 指定 COM 口（自动发现失败时）
+python tools\box_cli.py -p COM7 done Codex "answer ready"
+
+# 列出所有串口
+python tools\box_cli.py --list
+```
+
+### WSL/Linux 运行
+
 ```bash
-# 安装依赖（在 WSL 里用 venv）
+# 安装依赖（用 venv）
 cd pc_status_display
 python3 -m venv .venv
 .venv/bin/pip install pyserial
 
-# 确保设备已 bind+attach 到 WSL（Windows PowerShell 管理员）
+# WSL 需先把设备透传进来（Windows PowerShell 管理员）：
 #   usbipd bind --busid 1-2 --force
 #   usbipd attach --wsl --busid 1-2
-# WSL 首次还需：sudo modprobe vhci_hcd
+#   WSL 内首次还需：sudo modprobe vhci_hcd
 
-# 单条命令模式（发完即走，自动握手+心跳）
+# 单条命令
 .venv/bin/python tools/box_cli.py done Codex "answer ready"
-.venv/bin/python tools/box_cli.py wait Claude "needs your reply"
-.venv/bin/python tools/box_cli.py approval Codex "review merge"   # 橙色+attention级
-.venv/bin/python tools/box_cli.py work Codex "building..."
-.venv/bin/python tools/box_cli.py beep
-.venv/bin/python tools/box_cli.py history "Codex - done" "Claude - waiting"
-.venv/bin/python tools/box_cli.py settings volume=50 brightness=80 sound=on timeout=30
-
-# 交互模式（带全局快捷键，需 sudo）
-sudo .venv/bin/python tools/box_cli.py
 ```
 
 ### CLI 命令一览
