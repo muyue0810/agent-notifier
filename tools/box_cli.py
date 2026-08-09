@@ -314,10 +314,6 @@ Box shows Offline after 15s without PC heartbeat.
 Touch buttons: Mute / Ack (sends event_id back) / More (toggle history)
 """)
 
-Box bottom buttons (touch): Mute / History / More
-  - Pressing them sends {"event":"btn","id":"mute|history|more"} to PC
-""")
-
 
 # ============ 主入口 ============
 
