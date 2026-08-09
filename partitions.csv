@@ -1,0 +1,5 @@
+# Name,   Type, SubType, Offset,  Size, Flags
+# PC Status Display 分区表：不需要 SPIFFS（提示音用预生成 PCM 常量），节省空间
+nvs,      data, nvs,     0x9000,  0x6000,
+phy_init, data, phy,     ,        0x1000,
+factory,  app,  factory, ,        3072k,

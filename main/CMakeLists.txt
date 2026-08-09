@@ -1,0 +1,12 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "usb_cdc.c"
+        "ui.c"
+        "protocol.c"
+        "sound.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        json
+)

@@ -1,0 +1,9 @@
+dependencies:
+  idf:
+    version: ">=5.0"
+  espressif/esp-box:
+    version: "3.0.5"        # 锁定到 factory_demo 验证过的版本（v3.1 触摸有 bug）
+  espressif/esp_tinyusb:
+    version: "^1"
+  espressif/button:
+    version: "2.5.6"        # BSP v3.0.5 需要旧版 button API（v3+ 改了 API）

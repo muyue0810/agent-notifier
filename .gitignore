@@ -1,0 +1,26 @@
+# ESP-IDF 构建产物
+build/
+managed_components/
+dependencies.lock
+
+# sdkconfig（由 sdkconfig.defaults 生成，每人不同）
+sdkconfig
+sdkconfig.old
+
+# Python 虚拟环境
+.venv/
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Windows 烧录用的 bin 副本（在 build/ 里生成，不单独存）
+*.bin
+
+# 系统文件
+.DS_Store
+Thumbs.db
