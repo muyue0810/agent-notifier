@@ -120,6 +120,11 @@ class SessionStore:
         with self._lock:
             return list(self._history)
 
+    def sessions(self):
+        """Return active sessions in stable conversation-open order."""
+        with self._lock:
+            return [asdict(event) for event in self._sessions.values()]
+
     def active_count(self):
         with self._lock:
             return len(self._sessions)
@@ -161,6 +166,7 @@ class EventController:
             return {
                 "ok": True,
                 "display": snapshot,
+                "sessions": self.store.sessions(),
                 "active_sessions": self.store.active_count(),
             }
         if action == "ack":
@@ -170,12 +176,14 @@ class EventController:
                 "ok": True,
                 "removed": removed,
                 "display": snapshot,
+                "sessions": self.store.sessions(),
                 "active_sessions": self.store.active_count(),
             }
         if action == "status":
             return {
                 "ok": True,
                 "display": self.store.snapshot(),
+                "sessions": self.store.sessions(),
                 "history": self.store.history(),
                 "active_sessions": self.store.active_count(),
                 "box_connected": bool(self.bridge and self.bridge.connected),
@@ -358,6 +366,7 @@ class MockUIBridge:
                 "service_online": self.connected,
                 "muted": self._muted,
                 "display": dict(self._snapshot),
+                "sessions": self._controller.store.sessions(),
                 "history": list(self._history),
                 "active_sessions": self._controller.store.active_count(),
                 "updated_at": self._updated_at,
@@ -382,6 +391,7 @@ class MockUIBridge:
 class MockUIHTTPServer(http.server.ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+    request_queue_size = 64
 
     def __init__(self, address, bridge):
         self.bridge = bridge
@@ -490,6 +500,7 @@ class InboxWatcher:
 class NotifierTCPServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+    request_queue_size = 64
 
     def __init__(self, address, controller):
         self.controller = controller

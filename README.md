@@ -26,6 +26,7 @@
 | **优先级防覆盖** | Approval > Waiting > Done > Working，低优先级进程不会盖住待处理提醒 |
 | **Agent Hooks** | 支持 Codex / Claude Code 生命周期 hooks，自动显示工作、完成、待回复和待批准 |
 | **浏览器模拟 BOX** | 无需 ESP32、串口或 pyserial，即可验证聚合、优先级、Ack、Mute 和 History |
+| **会话卡片墙** | 每个活跃对话一张状态卡；会话增多时自动切换为三列或四列紧凑布局 |
 
 ## 硬件 / 软件要求
 
@@ -56,6 +57,7 @@ pc_status_display/
 │   ├── agent_hook.py / .bat    # Codex / Claude Code hook 适配器
 │   ├── mock_box.html            # 320×240 BOX 浏览器模拟器 + 事件实验面板
 │   ├── test_notifier.py        # 聚合规则与 hook 映射测试
+│   ├── test_mock_ui.mjs        # 无浏览器依赖的卡片 UI 行为测试
 │   └── flash.ps1               # Windows 端一键烧录脚本
 └── examples/
     ├── codex-hooks.json            # Codex hooks 配置模板
@@ -242,7 +244,11 @@ python3 -m venv .venv
 python3 tools/notifierd.py --mock-ui
 ```
 
-浏览器打开 `http://127.0.0.1:45832`。页面左侧严格按 BOX 的 320×240 布局显示，右侧 Event Lab 可以构造两个会话的 Working、Done、Waiting、Approval 和 Offline 事件。
+浏览器打开 `http://127.0.0.1:45832`。页面左侧严格按 BOX 的 320×240 布局显示，右侧 Event Lab 可以构造 Working、Done、Waiting、Approval 和 Offline 事件，也可以点击 `Load 6-session demo` 直接检查多会话布局。
+
+屏幕主体是会话卡片墙，不再额外显示一张大状态卡。每个活跃会话都有自己的卡片，直接显示 Agent、项目、当前状态和可用的消息摘要：1～4 个会话使用两列，5～6 个使用三列，更多会话自动缩成四列小卡。最多同时放 8 个位置，超过时以 `+N` 卡片轮换查看。
+
+蓝色闪电为 Working、绿色勾为 Done、黄色感叹号为 Waiting、橙色星标为 Approval。点击卡片即可选中并 Ack 对应会话；新 Approval 会话会自动获得焦点。
 
 也可以继续从另一个终端走真实 Hook 链路：
 
@@ -252,6 +258,16 @@ python3 tools/agent_hook.py --emit approval --source Claude:gadget --message "ne
 ```
 
 模拟器的 Ack 会通过 HTTP 回到同一个 `EventController`，因此可以完整验证多会话优先级、事件切换和 History；只有最终的 USB CDC、触摸、屏幕和声音硬件没有参与。
+
+不安装浏览器也可以执行完整的软件侧回归：
+
+```bash
+python3 tools/test_logic.py
+python3 tools/test_notifier.py
+node --test tools/test_mock_ui.mjs
+```
+
+其中 UI 测试直接执行 `mock_box.html` 内的真实脚本，覆盖 0～9 个会话的卡片布局、选中会话 Ack、Approval 自动聚焦、`+N` 轮换、Mute、History 和六会话演示。服务测试还覆盖并发 Hook/HTTP/共享目录写入、跨传输 Ack 和万次状态切换。
 
 ### 同一系统运行
 
