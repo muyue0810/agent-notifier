@@ -1,0 +1,70 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /ABSOLUTE/PATH/agent-notifier/tools/agent_hook.py --agent claude",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /ABSOLUTE/PATH/agent-notifier/tools/agent_hook.py --agent claude",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /ABSOLUTE/PATH/agent-notifier/tools/agent_hook.py --agent claude",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /ABSOLUTE/PATH/agent-notifier/tools/agent_hook.py --agent claude",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /ABSOLUTE/PATH/agent-notifier/tools/agent_hook.py --agent claude",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /ABSOLUTE/PATH/agent-notifier/tools/agent_hook.py --agent claude",
+            "timeout": 2
+          }
+        ]
+      }
+    ]
+  }
+}
