@@ -1,11 +1,13 @@
 """Pure logic tests for the multi-process notifier service and hook adapter."""
 
+import json
 import os
 import tempfile
 import sys
 import threading
 import time
 import unittest
+import urllib.request
 
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -132,6 +134,63 @@ class ControllerTests(unittest.TestCase):
                 self.assertEqual([], leftovers)
             finally:
                 watcher.stop()
+
+
+class MockUIBridgeTests(unittest.TestCase):
+    def setUp(self):
+        self.controller = notifierd.EventController()
+        self.bridge = notifierd.MockUIBridge(self.controller, ("127.0.0.1", 0))
+        self.controller.set_bridge(self.bridge)
+        self.bridge.start()
+        host, port = self.bridge.server_address
+        self.base_url = "http://{}:{}".format(host, port)
+
+    def tearDown(self):
+        self.bridge.stop()
+
+    def get_json(self, path):
+        with urllib.request.urlopen(self.base_url + path, timeout=2.0) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def post_json(self, payload):
+        request = urllib.request.Request(
+            self.base_url + "/api/action",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=2.0) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def test_page_and_state_api_are_available_without_serial(self):
+        with urllib.request.urlopen(self.base_url + "/", timeout=2.0) as response:
+            html = response.read().decode("utf-8")
+        self.assertIn("ESP32-S3-BOX Simulator", html)
+        self.assertIn('data-testid="state-card"', html)
+
+        status = self.get_json("/api/state")
+        self.assertEqual("mock-ui", status["transport"])
+        self.assertTrue(status["service_online"])
+        self.assertEqual("offline", status["display"]["state"])
+
+    def test_event_priority_and_ack_round_trip_through_http(self):
+        self.post_json(event("a", "done", "done-1"))
+        self.post_json(event("b", "approval", "approval-1"))
+
+        status = self.get_json("/api/state")
+        self.assertEqual(2, status["active_sessions"])
+        self.assertEqual("approval", status["display"]["state"])
+
+        response = self.post_json({"action": "ack", "event_id": "approval-1"})
+        self.assertTrue(response["removed"])
+        status = self.get_json("/api/state")
+        self.assertEqual("done", status["display"]["state"])
+        self.assertEqual("done-1", status["display"]["event_id"])
+
+    def test_mute_is_reflected_in_mock_device_state(self):
+        response = self.post_json({"action": "mute", "on": True})
+        self.assertTrue(response["muted"])
+        self.assertTrue(self.get_json("/api/state")["muted"])
 
 
 class HookMappingTests(unittest.TestCase):

@@ -25,6 +25,7 @@
 | **多进程聚合** | 常驻服务独占串口，同时接收多个 Codex / Claude 会话事件 |
 | **优先级防覆盖** | Approval > Waiting > Done > Working，低优先级进程不会盖住待处理提醒 |
 | **Agent Hooks** | 支持 Codex / Claude Code 生命周期 hooks，自动显示工作、完成、待回复和待批准 |
+| **浏览器模拟 BOX** | 无需 ESP32、串口或 pyserial，即可验证聚合、优先级、Ack、Mute 和 History |
 
 ## 硬件 / 软件要求
 
@@ -53,6 +54,7 @@ pc_status_display/
 │   ├── box_cli.bat             # Windows 启动脚本
 │   ├── notifierd.py / .bat     # 多进程聚合服务（唯一串口持有者）
 │   ├── agent_hook.py / .bat    # Codex / Claude Code hook 适配器
+│   ├── mock_box.html            # 320×240 BOX 浏览器模拟器 + 事件实验面板
 │   ├── test_notifier.py        # 聚合规则与 hook 映射测试
 │   └── flash.ps1               # Windows 端一键烧录脚本
 └── examples/
@@ -231,6 +233,25 @@ python3 -m venv .venv
 4. `processing`：工作中
 
 同一会话的新状态会替换旧状态；不同会话按优先级和更新时间聚合。BOX 上点击 Ack 会移除当前事件并自动显示下一条待处理事件，History 也由服务自动维护最近 5 条。
+
+### 无硬件模拟模式
+
+开发 PC 端服务和 Hooks 时，可以用浏览器模拟器替代实体 ESP32-S3-BOX。模拟模式不打开串口，也不要求安装 `pyserial`：
+
+```bash
+python3 tools/notifierd.py --mock-ui
+```
+
+浏览器打开 `http://127.0.0.1:45832`。页面左侧严格按 BOX 的 320×240 布局显示，右侧 Event Lab 可以构造两个会话的 Working、Done、Waiting、Approval 和 Offline 事件。
+
+也可以继续从另一个终端走真实 Hook 链路：
+
+```bash
+python3 tools/agent_hook.py --emit processing --source Codex:kernel --message "running tests"
+python3 tools/agent_hook.py --emit approval --source Claude:gadget --message "needs approval"
+```
+
+模拟器的 Ack 会通过 HTTP 回到同一个 `EventController`，因此可以完整验证多会话优先级、事件切换和 History；只有最终的 USB CDC、触摸、屏幕和声音硬件没有参与。
 
 ### 同一系统运行
 

@@ -9,8 +9,10 @@ terminal.
 """
 
 import argparse
+import http.server
 import json
 import logging
+import mimetypes
 import socketserver
 import threading
 import time
@@ -24,6 +26,7 @@ from box_cli import BoxSerial, find_box_port
 
 LOG = logging.getLogger("notifierd")
 DEFAULT_LISTEN = "127.0.0.1:45831"
+DEFAULT_MOCK_UI = "127.0.0.1:45832"
 MAX_REQUEST_BYTES = 64 * 1024
 VALID_STATES = ("done", "wait", "processing", "approval", "offline")
 VALID_LEVELS = ("info", "attention", "urgent", "silent")
@@ -292,6 +295,158 @@ class SerialBridge:
         self._sent_version = version
 
 
+class MockUIBridge:
+    """Browser-based BOX replacement for development without hardware."""
+
+    def __init__(self, controller, address, html_path=None):
+        self._controller = controller
+        self._address = address
+        self._html_path = Path(html_path or Path(__file__).with_name("mock_box.html"))
+        self._lock = threading.RLock()
+        self._snapshot = controller.store.snapshot()
+        self._history = []
+        self._muted = False
+        self._updated_at = time.time()
+        self._server = None
+        self._thread = None
+
+    @property
+    def connected(self):
+        return self._server is not None
+
+    @property
+    def server_address(self):
+        return self._server.server_address if self._server else self._address
+
+    def start(self):
+        if self._server:
+            return
+        if not self._html_path.is_file():
+            raise RuntimeError("mock UI asset not found: {}".format(self._html_path))
+        server = MockUIHTTPServer(self._address, self)
+        self._server = server
+        self._thread = threading.Thread(
+            target=server.serve_forever,
+            kwargs={"poll_interval": 0.2},
+            name="mock-box-ui",
+            daemon=True,
+        )
+        self._thread.start()
+        LOG.info("mock BOX UI available at http://%s:%d", *server.server_address)
+
+    def stop(self):
+        server, self._server = self._server, None
+        if server:
+            server.shutdown()
+            server.server_close()
+        if self._thread:
+            self._thread.join(timeout=2.0)
+            self._thread = None
+
+    def update(self, snapshot, history):
+        with self._lock:
+            self._snapshot = dict(snapshot)
+            self._history = list(history[:5])
+            self._updated_at = time.time()
+
+    def state(self):
+        with self._lock:
+            return {
+                "app": "agent_notifier",
+                "proto": 1,
+                "transport": "mock-ui",
+                "service_online": self.connected,
+                "muted": self._muted,
+                "display": dict(self._snapshot),
+                "history": list(self._history),
+                "active_sessions": self._controller.store.active_count(),
+                "updated_at": self._updated_at,
+            }
+
+    def handle_action(self, payload):
+        if not isinstance(payload, dict):
+            raise ValueError("request must be a JSON object")
+        action = payload.get("action")
+        if action == "mute":
+            with self._lock:
+                requested = payload.get("on")
+                self._muted = not self._muted if requested is None else bool(requested)
+                self._updated_at = time.time()
+                muted = self._muted
+            return {"ok": True, "muted": muted}
+        if action in ("event", "ack", "status"):
+            return self._controller.handle(payload)
+        raise ValueError("unknown mock action: {}".format(action))
+
+
+class MockUIHTTPServer(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+    def __init__(self, address, bridge):
+        self.bridge = bridge
+        super().__init__(address, MockUIRequestHandler)
+
+
+class MockUIRequestHandler(http.server.BaseHTTPRequestHandler):
+    server_version = "AgentNotifierMock/1.0"
+
+    def do_GET(self):
+        path = self.path.partition("?")[0]
+        if path == "/api/state":
+            self._send_json(self.server.bridge.state())
+            return
+        if path in ("/", "/index.html"):
+            self._send_asset(self.server.bridge._html_path)
+            return
+        self._send_json({"ok": False, "error": "not found"}, status=404)
+
+    def do_POST(self):
+        path = self.path.partition("?")[0]
+        if path != "/api/action":
+            self._send_json({"ok": False, "error": "not found"}, status=404)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 1 or length > MAX_REQUEST_BYTES:
+                raise ValueError("invalid request size")
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            response = self.server.bridge.handle_action(payload)
+            self._send_json(response)
+        except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            self._send_json({"ok": False, "error": str(exc)}, status=400)
+        except Exception:
+            LOG.exception("mock UI action failed")
+            self._send_json({"ok": False, "error": "internal error"}, status=500)
+
+    def log_message(self, format_text, *args):
+        LOG.debug("mock UI: " + format_text, *args)
+
+    def _send_asset(self, path):
+        data = path.read_bytes()
+        content_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+        self.send_response(200)
+        self.send_header("Content-Type", content_type + "; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "script-src 'self' 'unsafe-inline'; connect-src 'self'",
+        )
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _send_json(self, payload, status=200):
+        data = json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+
 class InboxWatcher:
     """Watch a shared directory for atomically published hook events."""
 
@@ -390,13 +545,21 @@ def main():
         "--inbox",
         help="optional shared event directory (useful for WSL hooks and a Windows daemon)",
     )
-    parser.add_argument("--port", help="BOX serial port; auto-detected when omitted")
+    output = parser.add_mutually_exclusive_group()
+    output.add_argument("--port", help="BOX serial port; auto-detected when omitted")
+    output.add_argument(
+        "--mock-ui",
+        nargs="?",
+        const=DEFAULT_MOCK_UI,
+        metavar="HOST:PORT",
+        help="replace the physical BOX with a browser UI (default: {})".format(DEFAULT_MOCK_UI),
+    )
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--retry", type=float, default=2.0, help="serial reconnect interval")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
-    if box_cli.serial is None:
+    if not args.mock_ui and box_cli.serial is None:
         parser.error("pyserial is required; run: python -m pip install pyserial")
 
     logging.basicConfig(
@@ -405,16 +568,20 @@ def main():
     )
     try:
         address = parse_address(args.listen)
+        mock_address = parse_address(args.mock_ui) if args.mock_ui else None
     except (ValueError, TypeError) as exc:
         parser.error(str(exc))
 
     controller = EventController()
-    bridge = SerialBridge(
-        controller.on_box_event,
-        port=args.port,
-        baud=args.baud,
-        retry_interval=max(args.retry, 0.2),
-    )
+    if mock_address:
+        bridge = MockUIBridge(controller, mock_address)
+    else:
+        bridge = SerialBridge(
+            controller.on_box_event,
+            port=args.port,
+            baud=args.baud,
+            retry_interval=max(args.retry, 0.2),
+        )
     controller.set_bridge(bridge)
     server = NotifierTCPServer(address, controller)
     inbox = InboxWatcher(args.inbox, controller) if args.inbox else None

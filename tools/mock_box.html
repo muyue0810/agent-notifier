@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Agent Notifier BOX Simulator</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --page: #080d18;
+      --panel: #111827;
+      --panel-border: #263143;
+      --muted: #9ca6b5;
+      --text: #f8fafc;
+      --done: #19a979;
+      --wait: #ed9007;
+      --processing: #2878d0;
+      --approval: #d97706;
+      --offline: #4b5563;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 18% 12%, rgba(40, 120, 208, .18), transparent 28rem),
+        radial-gradient(circle at 85% 90%, rgba(25, 169, 121, .12), transparent 30rem),
+        var(--page);
+    }
+
+    button, input { font: inherit; }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(680px, 1fr) 360px;
+      gap: 32px;
+      width: min(1120px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 42px 0;
+      align-items: start;
+    }
+
+    .device-column { min-width: 0; }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: #78e0b9;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: -.03em;
+    }
+
+    .subtitle {
+      margin: 8px 0 26px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .device-frame {
+      width: 668px;
+      height: 508px;
+      padding: 14px;
+      border: 1px solid #354156;
+      border-radius: 30px;
+      background: linear-gradient(145deg, #303a4a, #111722 62%);
+      box-shadow: 0 30px 80px rgba(0, 0, 0, .48), inset 0 1px rgba(255, 255, 255, .12);
+    }
+
+    .screen-viewport {
+      width: 640px;
+      height: 480px;
+      overflow: hidden;
+      border-radius: 18px;
+      background: #111827;
+      box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .6);
+    }
+
+    .screen {
+      position: relative;
+      width: 320px;
+      height: 240px;
+      overflow: hidden;
+      color: white;
+      background: #111827;
+      transform: scale(2);
+      transform-origin: top left;
+      font-family: Montserrat, Arial, sans-serif;
+      user-select: none;
+    }
+
+    .screen-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 32px;
+      padding: 0 12px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .connection {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      color: #78e0b9;
+    }
+
+    .connection-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .connection.disconnected { color: #9ca6b5; }
+
+    .state-card {
+      position: relative;
+      width: 302px;
+      height: 160px;
+      margin: 0 9px;
+      overflow: hidden;
+      border-radius: 15px;
+      background: var(--offline);
+      text-align: center;
+      transition: background .18s ease;
+    }
+
+    .state-card.done { background: var(--done); }
+    .state-card.wait { background: var(--wait); }
+    .state-card.processing { background: var(--processing); }
+    .state-card.approval { background: var(--approval); }
+    .state-card.offline { background: var(--offline); }
+
+    .state-card.blink { animation: card-blink 1s ease-in-out infinite alternate; }
+    @keyframes card-blink { from { opacity: .58; } to { opacity: 1; } }
+
+    .state-icon {
+      display: grid;
+      place-items: center;
+      width: 54px;
+      height: 54px;
+      margin: 20px auto 0;
+      border-radius: 50%;
+      color: var(--offline);
+      background: #f5f7fa;
+      font-size: 24px;
+      font-weight: 900;
+    }
+
+    .done .state-icon { color: var(--done); }
+    .wait .state-icon { color: var(--wait); }
+    .processing .state-icon { color: var(--processing); }
+    .approval .state-icon { color: var(--approval); }
+
+    .state-name {
+      margin-top: 4px;
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 30px;
+    }
+
+    .state-detail {
+      width: 284px;
+      margin: 1px auto 0;
+      overflow: hidden;
+      color: rgba(255, 255, 255, .92);
+      font-size: 14px;
+      line-height: 19px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      height: 48px;
+      border-top: 1px solid #263143;
+    }
+
+    .tool-button {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: 0;
+      border-right: 1px solid #263143;
+      color: #d2d8e2;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .tool-button:last-child { border-right: 0; }
+    .tool-button:active { background: #1f2937; }
+    .tool-button:disabled { opacity: .35; cursor: default; }
+    .tool-icon { font-size: 14px; line-height: 16px; }
+    .tool-label { color: #9ca6b5; font-size: 14px; line-height: 17px; }
+    .tool-button.active .tool-label { color: #fbbf24; }
+
+    .history-layer {
+      position: absolute;
+      z-index: 4;
+      inset: 0;
+      display: none;
+      padding: 10px;
+      background: #111827;
+    }
+
+    .history-layer.visible { display: block; }
+    .history-title { margin: 0 0 8px; font-size: 24px; }
+
+    .history-items {
+      display: grid;
+      gap: 5px;
+      color: #ccc;
+      font-size: 13px;
+      line-height: 18px;
+    }
+
+    .history-item {
+      overflow: hidden;
+      padding: 5px 7px;
+      border: 1px solid #263143;
+      border-radius: 6px;
+      background: #172033;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .history-back {
+      position: absolute;
+      right: 10px;
+      bottom: 8px;
+      padding: 5px 10px;
+      border: 1px solid #354156;
+      border-radius: 6px;
+      color: #d2d8e2;
+      background: #1f2937;
+      font-size: 12px;
+    }
+
+    .panel {
+      padding: 22px;
+      border: 1px solid var(--panel-border);
+      border-radius: 18px;
+      background: rgba(17, 24, 39, .88);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, .28);
+      backdrop-filter: blur(16px);
+    }
+
+    .panel h2 { margin: 0 0 5px; font-size: 18px; }
+    .panel-copy { margin: 0 0 18px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    .stat {
+      padding: 10px 12px;
+      border: 1px solid #263143;
+      border-radius: 10px;
+      background: #0d1422;
+    }
+
+    .stat-label { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+    .stat-value { margin-top: 3px; font-size: 18px; font-weight: 750; }
+
+    .field { display: grid; gap: 6px; margin-bottom: 11px; }
+    .field label { color: #c4ccda; font-size: 12px; font-weight: 700; }
+
+    .field input {
+      width: 100%;
+      padding: 9px 10px;
+      border: 1px solid #354156;
+      border-radius: 9px;
+      outline: 0;
+      color: var(--text);
+      background: #0d1422;
+    }
+
+    .field input:focus { border-color: #2878d0; box-shadow: 0 0 0 3px rgba(40, 120, 208, .16); }
+
+    .session-presets, .event-buttons {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .session-presets { margin: -2px 0 14px; }
+
+    .panel button {
+      padding: 9px 10px;
+      border: 1px solid #354156;
+      border-radius: 9px;
+      color: #e8edf5;
+      background: #172033;
+      cursor: pointer;
+    }
+
+    .panel button:hover { border-color: #53627a; background: #1d2940; }
+    .event-buttons button[data-state="done"] { border-color: rgba(25, 169, 121, .65); }
+    .event-buttons button[data-state="wait"] { border-color: rgba(237, 144, 7, .65); }
+    .event-buttons button[data-state="processing"] { border-color: rgba(40, 120, 208, .75); }
+    .event-buttons button[data-state="approval"] { border-color: rgba(217, 119, 6, .75); }
+    .event-buttons button[data-state="offline"] { grid-column: 1 / -1; }
+
+    .json-preview {
+      max-height: 150px;
+      margin: 18px 0 0;
+      overflow: auto;
+      padding: 11px;
+      border: 1px solid #263143;
+      border-radius: 10px;
+      color: #9fb3cb;
+      background: #090f1a;
+      font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+      white-space: pre-wrap;
+    }
+
+    .error-banner {
+      display: none;
+      margin-top: 16px;
+      padding: 10px 12px;
+      border: 1px solid #7f1d1d;
+      border-radius: 10px;
+      color: #fecaca;
+      background: rgba(127, 29, 29, .28);
+      font-size: 13px;
+    }
+
+    .error-banner.visible { display: block; }
+
+    @media (max-width: 1080px) {
+      .workspace { grid-template-columns: 1fr; width: 668px; }
+      .panel { width: 668px; }
+      .session-presets, .event-buttons { grid-template-columns: repeat(3, 1fr); }
+      .event-buttons button[data-state="offline"] { grid-column: auto; }
+    }
+
+    @media (max-width: 720px) {
+      .workspace { width: 100%; padding: 20px 12px; }
+      .device-frame { width: 100%; height: auto; aspect-ratio: 668 / 508; padding: 2.1%; }
+      .screen-viewport { width: 100%; height: auto; aspect-ratio: 4 / 3; }
+      .screen { transform: scale(calc((100vw - 52px) / 320)); }
+      .panel { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="workspace">
+    <section class="device-column">
+      <p class="eyebrow">Hardware-free development</p>
+      <h1>ESP32-S3-BOX Simulator</h1>
+      <p class="subtitle">A browser replacement for the physical 320 × 240 display. Events, priority, history and Ack use the production notifier service.</p>
+
+      <div class="device-frame">
+        <div class="screen-viewport">
+          <div class="screen" data-testid="box-screen">
+            <header class="screen-header">
+              <span>Agent Notifier</span>
+              <span class="connection disconnected" id="connection">
+                <span class="connection-dot"></span>
+                <span id="connection-label">----</span>
+              </span>
+            </header>
+
+            <section class="state-card offline" id="state-card" data-testid="state-card">
+              <div class="state-icon" id="state-icon">×</div>
+              <div class="state-name" id="state-name">Offline</div>
+              <div class="state-detail" id="state-detail"></div>
+            </section>
+
+            <footer class="toolbar">
+              <button class="tool-button" id="mute-button" type="button">
+                <span class="tool-icon">●</span>
+                <span class="tool-label" id="mute-label">Mute</span>
+              </button>
+              <button class="tool-button" id="ack-button" type="button" disabled>
+                <span class="tool-icon">✓</span>
+                <span class="tool-label">Ack</span>
+              </button>
+              <button class="tool-button" id="more-button" type="button">
+                <span class="tool-icon">↻</span>
+                <span class="tool-label">More</span>
+              </button>
+            </footer>
+
+            <section class="history-layer" id="history-layer" data-testid="history-layer">
+              <h2 class="history-title">History</h2>
+              <div class="history-items" id="history-items"></div>
+              <button class="history-back" id="history-back" type="button">Back</button>
+            </section>
+          </div>
+        </div>
+      </div>
+      <div class="error-banner" id="error-banner">Simulator service is unavailable. Start notifierd with --mock-ui.</div>
+    </section>
+
+    <aside class="panel">
+      <h2>Event Lab</h2>
+      <p class="panel-copy">Inject events from multiple sessions and verify arbitration without Codex, Claude or a serial device.</p>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-label">Sessions</div>
+          <div class="stat-value" id="active-sessions">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Transport</div>
+          <div class="stat-value" id="transport">Mock</div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="session-id">Session ID</label>
+        <input id="session-id" value="mock:session-a" maxlength="128">
+      </div>
+      <div class="session-presets">
+        <button type="button" data-session="mock:session-a" data-source="Codex:kernel#A">Session A</button>
+        <button type="button" data-session="mock:session-b" data-source="Claude:gadget#B">Session B</button>
+      </div>
+      <div class="field">
+        <label for="source">Source</label>
+        <input id="source" value="Codex:kernel#A" maxlength="40">
+      </div>
+      <div class="field">
+        <label for="message">Message</label>
+        <input id="message" value="running tests" maxlength="80">
+      </div>
+
+      <div class="event-buttons">
+        <button type="button" data-state="processing">Working</button>
+        <button type="button" data-state="done">Done</button>
+        <button type="button" data-state="wait">Waiting</button>
+        <button type="button" data-state="approval">Approval</button>
+        <button type="button" data-state="offline">Clear session</button>
+      </div>
+
+      <pre class="json-preview" id="json-preview">Waiting for service…</pre>
+    </aside>
+  </main>
+
+  <script>
+    const states = {
+      done: { name: "Done", icon: "✓" },
+      wait: { name: "Waiting", icon: "!" },
+      processing: { name: "Working", icon: "⚡" },
+      approval: { name: "Approval", icon: "★" },
+      offline: { name: "Offline", icon: "×" }
+    };
+
+    const $ = (id) => document.getElementById(id);
+    let latest = null;
+    let historyVisible = false;
+    let lastEventId = "";
+    let audioContext = null;
+
+    async function request(path, options) {
+      const response = await fetch(path, options);
+      const payload = await response.json();
+      if (!response.ok || payload.ok === false) throw new Error(payload.error || `HTTP ${response.status}`);
+      return payload;
+    }
+
+    async function post(payload) {
+      return request("/api/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+    }
+
+    function enableAudio() {
+      if (!audioContext) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) audioContext = new AudioContext();
+      }
+      if (audioContext && audioContext.state === "suspended") audioContext.resume();
+    }
+
+    function playBell(level) {
+      if (!audioContext || !latest || latest.muted || level === "silent") return;
+      const count = level === "urgent" ? 3 : level === "attention" ? 2 : 1;
+      for (let index = 0; index < count; index += 1) {
+        const start = audioContext.currentTime + index * .23;
+        [880, 1760].forEach((frequency, harmonic) => {
+          const oscillator = audioContext.createOscillator();
+          const gain = audioContext.createGain();
+          oscillator.frequency.value = frequency;
+          gain.gain.setValueAtTime(harmonic ? .08 : .18, start);
+          gain.gain.exponentialRampToValueAtTime(.001, start + .42);
+          oscillator.connect(gain).connect(audioContext.destination);
+          oscillator.start(start);
+          oscillator.stop(start + .45);
+        });
+      }
+    }
+
+    function render(payload) {
+      const display = payload.display || { state: "offline" };
+      const state = states[display.state] || states.offline;
+      const connected = Boolean(payload.service_online);
+      const detail = [display.source, display.message].filter(Boolean).join(" - ");
+
+      $("connection").classList.toggle("disconnected", !connected);
+      $("connection-label").textContent = connected ? "SVC" : "----";
+      $("state-card").className = `state-card ${display.state || "offline"}`;
+      $("state-card").classList.toggle("blink", ["wait", "processing", "approval"].includes(display.state));
+      $("state-icon").textContent = state.icon;
+      $("state-name").textContent = state.name;
+      $("state-detail").textContent = detail;
+      $("ack-button").disabled = !display.event_id;
+      $("mute-button").classList.toggle("active", Boolean(payload.muted));
+      $("mute-label").textContent = payload.muted ? "Muted" : "Mute";
+      $("active-sessions").textContent = String(payload.active_sessions || 0);
+      $("transport").textContent = payload.transport === "mock-ui" ? "Mock" : payload.transport;
+
+      const history = Array.isArray(payload.history) ? payload.history : [];
+      $("history-items").replaceChildren(...(history.length ? history : ["(no history yet)"]).map((text) => {
+        const item = document.createElement("div");
+        item.className = "history-item";
+        item.textContent = text;
+        return item;
+      }));
+      $("json-preview").textContent = JSON.stringify(payload, null, 2);
+      $("error-banner").classList.remove("visible");
+
+      if (display.event_id && display.event_id !== lastEventId) playBell(display.level || "info");
+      lastEventId = display.event_id || "";
+      latest = payload;
+    }
+
+    async function poll() {
+      try {
+        render(await request("/api/state"));
+      } catch (error) {
+        $("connection").classList.add("disconnected");
+        $("connection-label").textContent = "----";
+        $("error-banner").classList.add("visible");
+      }
+    }
+
+    $("mute-button").addEventListener("click", async () => {
+      enableAudio();
+      await post({ action: "mute" });
+      await poll();
+    });
+
+    $("ack-button").addEventListener("click", async () => {
+      enableAudio();
+      if (!latest || !latest.display.event_id) return;
+      await post({ action: "ack", event_id: latest.display.event_id });
+      await poll();
+    });
+
+    function toggleHistory(show) {
+      historyVisible = show;
+      $("history-layer").classList.toggle("visible", show);
+    }
+
+    $("more-button").addEventListener("click", () => toggleHistory(!historyVisible));
+    $("history-back").addEventListener("click", () => toggleHistory(false));
+
+    document.querySelectorAll("[data-session]").forEach((button) => {
+      button.addEventListener("click", () => {
+        $("session-id").value = button.dataset.session;
+        $("source").value = button.dataset.source;
+      });
+    });
+
+    document.querySelectorAll("[data-state]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        enableAudio();
+        const state = button.dataset.state;
+        const level = state === "approval" || state === "wait" ? "attention" : state === "processing" ? "silent" : "info";
+        await post({
+          action: "event",
+          session_id: $("session-id").value,
+          source: $("source").value,
+          state,
+          message: state === "offline" ? "session ended" : $("message").value,
+          event_id: `mock-${state}-${Date.now().toString(36)}`.slice(0, 39),
+          level
+        });
+        await poll();
+      });
+    });
+
+    poll();
+    setInterval(poll, 400);
+  </script>
+</body>
+</html>
