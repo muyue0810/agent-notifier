@@ -1,0 +1,65 @@
+{
+  "description": "Forward Codex lifecycle events to Agent Notifier.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /ABSOLUTE/PATH/agent-notifier/tools/agent_hook.py --agent codex",
+            "commandWindows": "py -3 C:\\ABSOLUTE\\PATH\\agent-notifier\\tools\\agent_hook.py --agent codex",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /ABSOLUTE/PATH/agent-notifier/tools/agent_hook.py --agent codex",
+            "commandWindows": "py -3 C:\\ABSOLUTE\\PATH\\agent-notifier\\tools\\agent_hook.py --agent codex",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /ABSOLUTE/PATH/agent-notifier/tools/agent_hook.py --agent codex",
+            "commandWindows": "py -3 C:\\ABSOLUTE\\PATH\\agent-notifier\\tools\\agent_hook.py --agent codex",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /ABSOLUTE/PATH/agent-notifier/tools/agent_hook.py --agent codex",
+            "commandWindows": "py -3 C:\\ABSOLUTE\\PATH\\agent-notifier\\tools\\agent_hook.py --agent codex",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /ABSOLUTE/PATH/agent-notifier/tools/agent_hook.py --agent codex",
+            "commandWindows": "py -3 C:\\ABSOLUTE\\PATH\\agent-notifier\\tools\\agent_hook.py --agent codex",
+            "timeout": 2
+          }
+        ]
+      }
+    ]
+  }
+}

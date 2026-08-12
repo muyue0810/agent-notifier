@@ -30,8 +30,8 @@ try:
     import serial
     from serial.tools import list_ports
 except ImportError:
-    print("缺少 pyserial，请运行: pip install pyserial")
-    sys.exit(1)
+    serial = None
+    list_ports = None
 
 
 # Espressif 的 USB VID
@@ -42,6 +42,8 @@ ESPRESSIF_VIDS = {0x303A}
 def find_box_port(prefer=None):
     """自动发现 BOX 串口（跨平台）。返回 device 路径或 None。
     Windows: COMx，Linux: /dev/ttyACMx"""
+    if list_ports is None:
+        return None
     ports = list(list_ports.comports())
     cands = []
     for p in ports:
@@ -70,14 +72,19 @@ def find_box_port(prefer=None):
 
 class BoxSerial:
     def __init__(self, port, baud=115200):
+        if serial is None:
+            raise RuntimeError("缺少 pyserial，请运行: pip install pyserial")
         self.ser = serial.Serial(port, baud, timeout=0.2)
         self._rx_thread = None
         self._stop = False
+        self._tx_lock = threading.Lock()
 
     def send_json(self, obj):
         """发送一个 JSON 对象（一行）。"""
         line = json.dumps(obj, ensure_ascii=False) + "\n"
-        self.ser.write(line.encode("utf-8"))
+        with self._tx_lock:
+            self.ser.write(line.encode("utf-8"))
+            self.ser.flush()
 
     def send_hello(self):
         """握手：报告协议版本。"""
@@ -349,6 +356,10 @@ def main():
     ap.add_argument("cmd", nargs="?", help="单条命令（text/status/progress/beep/clear/ping）")
     ap.add_argument("args", nargs=argparse.REMAINDER, help="命令参数")
     args = ap.parse_args()
+
+    if serial is None or list_ports is None:
+        print("缺少 pyserial，请运行: pip install pyserial")
+        sys.exit(1)
 
     if args.list:
         for p in list_ports.comports():

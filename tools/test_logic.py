@@ -7,12 +7,7 @@
 import sys, os, json, io
 sys.path.insert(0, os.path.dirname(__file__))
 
-# ============ 导入被测代码（需要 pyserial）============
-try:
-    import serial  # noqa: F401
-except ImportError:
-    print("ERROR: 需要 pyserial。运行: pip install pyserial")
-    sys.exit(2)
+# ============ 导入被测代码 ============
 import box_cli  # noqa: E402
 
 # ============ 测试框架（极简，不依赖 pytest）============
@@ -55,14 +50,16 @@ class FakeSerial:
         return b""
     def close(self): pass
 
+class FakeSerialModule:
+    Serial = FakeSerial
+
 # ============ 测试用例 ============
 
 def test_protocol_state_construction():
     """state 指令的 JSON 构造正确"""
     section("协议构造: state")
-    import serial as _ser_mod
-    orig_serial = _ser_mod.Serial
-    _ser_mod.Serial = FakeSerial
+    orig_serial = box_cli.serial
+    box_cli.serial = FakeSerialModule
     try:
         box = box_cli.BoxSerial("FAKE")
         # 完整字段
@@ -88,14 +85,13 @@ def test_protocol_state_construction():
         check("approval 状态值", sent.get("s") == "approval")
         check("urgent 等级", sent.get("level") == "urgent")
     finally:
-        _ser_mod.Serial = orig_serial
+        box_cli.serial = orig_serial
 
 def test_protocol_other_commands():
     """其他指令的 JSON 构造"""
     section("协议构造: 其他指令")
-    import serial as _ser_mod
-    orig_serial = _ser_mod.Serial
-    _ser_mod.Serial = FakeSerial
+    orig_serial = box_cli.serial
+    box_cli.serial = FakeSerialModule
     try:
         box = box_cli.BoxSerial("FAKE")
         box.send_hello();   h = json.loads(box.ser.written[-1].decode())
@@ -108,7 +104,7 @@ def test_protocol_other_commands():
         check("mute on=true", m.get("t") == "mute" and m.get("on") is True)
         check("ping", p.get("t") == "ping")
     finally:
-        _ser_mod.Serial = orig_serial
+        box_cli.serial = orig_serial
 
 def test_state_types_enum():
     """STATE_TYPES 包含全部 5 种状态"""
@@ -124,9 +120,8 @@ def test_state_types_enum():
 def test_dispatch_command():
     """dispatch_command 正确解析各种命令"""
     section("命令派发")
-    import serial as _ser_mod
-    orig_serial = _ser_mod.Serial
-    _ser_mod.Serial = FakeSerial
+    orig_serial = box_cli.serial
+    box_cli.serial = FakeSerialModule
     try:
         box = box_cli.BoxSerial("FAKE")
 
@@ -169,7 +164,7 @@ def test_dispatch_command():
         check("settings volume", sent.get("volume") == 50)
         check("settings brightness", sent.get("brightness") == 80)
     finally:
-        _ser_mod.Serial = orig_serial
+        box_cli.serial = orig_serial
 
 def test_event_id_uniqueness():
     """_gen_event_id 每次不同"""

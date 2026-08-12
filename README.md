@@ -22,6 +22,9 @@
 | **History 页面** | PC 下发最近 5 条历史，点 More 按钮切换查看 |
 | **Settings** | 运行时调整音量 / 亮度 / 提示音开关 / 息屏时间 |
 | **协议版本握手** | `hello` 握手报告 `proto:1`，便于后续兼容升级 |
+| **多进程聚合** | 常驻服务独占串口，同时接收多个 Codex / Claude 会话事件 |
+| **优先级防覆盖** | Approval > Waiting > Done > Working，低优先级进程不会盖住待处理提醒 |
+| **Agent Hooks** | 支持 Codex / Claude Code 生命周期 hooks，自动显示工作、完成、待回复和待批准 |
 
 ## 硬件 / 软件要求
 
@@ -45,10 +48,16 @@ pc_status_display/
 │   ├── protocol.c / .h         # JSON 协议解析（proto:1）
 │   ├── sound.c / .h            # ES8311 钟声 + 等级响应 + 节流
 │   └── idf_component.yml       # 组件依赖（锁版本）
-└── tools/
-    ├── box_cli.py              # PC 端 Python CLI（跨平台：Windows/Linux/WSL）
-    ├── box_cli.bat             # Windows 启动脚本
-    └── flash.ps1               # Windows 端一键烧录脚本
+├── tools/
+│   ├── box_cli.py              # PC 端 Python CLI（跨平台：Windows/Linux/WSL）
+│   ├── box_cli.bat             # Windows 启动脚本
+│   ├── notifierd.py / .bat     # 多进程聚合服务（唯一串口持有者）
+│   ├── agent_hook.py / .bat    # Codex / Claude Code hook 适配器
+│   ├── test_notifier.py        # 聚合规则与 hook 映射测试
+│   └── flash.ps1               # Windows 端一键烧录脚本
+└── examples/
+    ├── codex-hooks.json            # Codex hooks 配置模板
+    └── claude-settings-hooks.json  # Claude Code hooks 配置模板
 ```
 
 ## 通信协议（proto:1）
@@ -210,21 +219,94 @@ python3 -m venv .venv
 - `Ctrl+F5` → approval Codex "review merge"
 - `Ctrl+F6` → mute
 
+## 多进程常驻服务（推荐）
+
+多个 Codex / Claude 终端不能同时直接打开同一个 COM/tty 串口。`notifierd.py` 是唯一串口持有者，Agent hook 只向它提交短事件，由服务统一决定 BOX 当前显示哪一条。
+
+聚合优先级为：
+
+1. `approval`：需要批准
+2. `wait`：需要回复
+3. `done`：回答完成
+4. `processing`：工作中
+
+同一会话的新状态会替换旧状态；不同会话按优先级和更新时间聚合。BOX 上点击 Ack 会移除当前事件并自动显示下一条待处理事件，History 也由服务自动维护最近 5 条。
+
+### 同一系统运行
+
+```bash
+# 安装依赖
+python -m pip install pyserial
+
+# Windows
+tools\notifierd.bat --port COM7
+
+# Linux / WSL（设备已透传时）
+python3 tools/notifierd.py --port /dev/ttyACM0
+```
+
+服务默认监听 `127.0.0.1:45831`。可先发送模拟事件验证：
+
+```bash
+python3 tools/agent_hook.py --emit processing --source Codex:kernel --message "running tests"
+python3 tools/agent_hook.py --emit wait --source Claude:gadget --message "needs your reply"
+python3 tools/agent_hook.py --status --verbose
+```
+
+### Windows 服务 + WSL Agent（无需把 BOX 透传给 WSL）
+
+使用 Windows/WSL 共享事件目录，不开放网络端口：
+
+```powershell
+# Windows：服务直接使用 COM 口，并监视共享收件箱
+tools\notifierd.bat --port COM7 --inbox "$env:USERPROFILE\.agent-notifier\inbox"
+```
+
+```bash
+# WSL：Codex / Claude hook 写入同一个 Windows 目录
+export AGENT_NOTIFIER_INBOX=/mnt/c/Users/<windows-user>/.agent-notifier/inbox
+
+# 手动验证
+python3 tools/agent_hook.py --emit done --source Codex:test --message "answer ready"
+```
+
+Hook 采用临时文件 + 原子重命名，多进程同时写入不会互相覆盖。可把 `AGENT_NOTIFIER_INBOX` 放进 WSL shell 启动配置，或在 hook 命令后显式加 `--inbox /mnt/c/...`。
+
+## 自动接入 Codex / Claude Code
+
+### Codex CLI
+
+1. 将 `examples/codex-hooks.json` 复制/合并到 `~/.codex/hooks.json`。
+2. 把模板里的 `/ABSOLUTE/PATH/` 改成仓库实际绝对路径；Windows 端同时修改 `commandWindows`。
+3. 若服务运行在 Windows、Codex 运行在 WSL，在每条命令后加共享目录参数：
+   `--inbox /mnt/c/Users/<windows-user>/.agent-notifier/inbox`。
+4. 重新进入 Codex，运行 `/hooks` 检查并信任新增 hooks。
+
+映射关系：`UserPromptSubmit → Working`、`PermissionRequest → Approval`、`Stop → Done/Waiting`、`SessionEnd → 清除该会话`。Stop 的最后一条回复像问题或明确要求用户提供/确认信息时显示 Waiting，否则显示 Done。配置格式依据 [Codex Hooks 官方文档](https://developers.openai.com/codex/hooks)。
+
+### Claude Code
+
+将 `examples/claude-settings-hooks.json` 中的 `hooks` 合并到 `~/.claude/settings.json`，修改绝对路径，并按运行环境配置同一个 `--inbox`。不要直接覆盖已有 settings 中的其他配置。
+
+映射关系：`UserPromptSubmit → Working`、`Notification(permission_prompt) → Approval`、`Notification(idle_prompt) → Waiting`、`Stop → Done/Waiting`、`StopFailure → Urgent`、`SessionEnd → 清除该会话`。配置格式依据 [Claude Code Hooks 官方文档](https://docs.anthropic.com/en/docs/claude-code/hooks)。
+
+Hook 适配器连接失败时会安静退出，不会阻塞 Codex / Claude 的正常工作；需要排查时在 hook 命令后加 `--verbose`。
+
 ## 在你的工作流里集成
 
-CLI 是普通的串口通信，任何能发串口数据的脚本都能用。例如在 CI/CD 或 Agent 脚本里：
+常驻服务运行时，CI/CD 或 Agent 脚本应向服务发送事件，避免和服务抢串口：
 
 ```bash
 # Agent 开始工作
-.venv/bin/python tools/box_cli.py work Codex "running tests"
+python3 tools/agent_hook.py --emit processing --source Codex:ci --message "running tests"
 
 # ... 执行任务 ...
 
 # 完成并响铃（urgent 级别，3 声急促）
-.venv/bin/python tools/box_cli.py state done Codex "tests passed" --level urgent
+python3 tools/agent_hook.py --emit done --source Codex:ci --message "tests passed" --level urgent
 ```
 
-或用 Python 直接发 JSON（proto:1）：
+未运行 `notifierd.py` 时，也可用 Python 直接发串口 JSON（proto:1）：
 
 ```python
 import serial, json
